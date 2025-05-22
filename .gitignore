@@ -1,38 +1,16 @@
-# Model files (too large for GitHub)
+# Large model files
 *.pkl
 
-# Dataset files (can be large)
+# Large dataset files  
 *.csv
+sarcasm.csv
 
-# Python cache
+# Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-
-# Virtual environment
-env/
-venv/
-.venv/
 
 # Streamlit
 .streamlit/
 
-# Jupyter Notebooks
-.ipynb_checkpoints/
-
-# OS files
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo

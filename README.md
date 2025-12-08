@@ -2,7 +2,12 @@
 
 A comprehensive machine learning application that detects sarcasm in text using multiple ML and deep learning models. Built with Streamlit for an interactive web interface.
 
+
+
 <img width="622" height="331" alt="Image" src="https://github.com/user-attachments/assets/22dfcbb9-0cf8-4169-b888-ce6ad901570b" />
+
+
+
 ## Features
 
 - **Multiple ML Models**: Naive Bayes, Logistic Regression, Pretrained RoBERTa, and DistilBERT

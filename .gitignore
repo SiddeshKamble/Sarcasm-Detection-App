@@ -1,16 +1,18 @@
-# Large model files
-*.pkl
-
-# Large dataset files  
-*.csv
-sarcasm.csv
-
 # Python
+venv/
+.venv/
 __pycache__/
 *.pyc
 
 # Streamlit
 .streamlit/
 
-# OS
+# Mac
 .DS_Store
+
+# Models / artifacts
+*.pkl
+*.joblib
+
+# Jupyter
+.ipynb_checkpoints/

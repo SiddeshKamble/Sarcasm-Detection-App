@@ -176,10 +176,10 @@ def display_metrics(metrics_dict):
 # Main App
 def main():
     st.set_page_config(layout="wide")
-    st.title("🌟 Sarcasm Detection App 🤖💬")
+    st.title("Sarcasm Detection App 👾💬")
 
     # Navigation Bar
-    st.sidebar.title("🛣️ Navigation")
+    st.sidebar.title("Navigation")
     navigation = st.sidebar.radio(
         "Choose a section:",
         [
@@ -196,7 +196,7 @@ def main():
 
     # Home
     if navigation == "🏠 Home":
-        st.header("Welcome to the Sarcasm Detection App 🎉")
+        st.header("Welcome to the Sarcasm Detection App!")
         st.markdown(
             """
             ### 🤔 What is Sarcasm Detection?
@@ -210,7 +210,7 @@ def main():
             
             > "Sarcasm is the lowest form of wit but the highest form of intelligence." – Oscar Wilde 🦅
 
-            **Have fun exploring sarcasm detection! 🚀**
+            **Have fun exploring sarcasm detection! **
             """
         )
 

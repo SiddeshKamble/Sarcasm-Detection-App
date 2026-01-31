@@ -20,45 +20,64 @@ from collections import Counter
 from wordcloud import WordCloud
 
 
-# =========================
-# Google Drive dataset setup
-# =========================
-import os
-import pandas as pd
-import streamlit as st
+import requests
 
 DRIVE_FILE_ID = "1BQaeAZfiMXHKwAZ9yEyO1VH5wTPyskIk"
 LOCAL_PATH = "sarcasm.csv"
 
+
+def download_from_drive(file_id: str, dest: str):
+    """
+    Downloads large Google Drive files by handling the 'virus scan warning' confirm token.
+    """
+    URL = "https://drive.usercontent.google.com/download"
+    session = requests.Session()
+
+    # First request (may return the warning HTML)
+    r = session.get(URL, params={"id": file_id}, stream=True)
+    r.raise_for_status()
+
+    # If we got HTML, extract confirm token and retry
+    content_type = (r.headers.get("Content-Type") or "").lower()
+    if "text/html" in content_type:
+        html = r.text
+
+        # Try to find confirm token from hidden input: name="confirm" value="t" or similar
+        m = re.search(r'name="confirm"\s+value="([^"]+)"', html)
+        confirm = m.group(1) if m else "t"
+
+        # Retry with confirm token
+        r = session.get(URL, params={"id": file_id, "confirm": confirm}, stream=True)
+        r.raise_for_status()
+
+    # Write file to disk
+    with open(dest, "wb") as f:
+        for chunk in r.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                f.write(chunk)
+
+
 @st.cache_data
 def load_data():
-    # Download from Google Drive if file not present
-    if not os.path.exists(LOCAL_PATH):
-        import gdown
-
-        url = f"https://drive.google.com/uc?id={DRIVE_FILE_ID}"
-        gdown.download(url, LOCAL_PATH, quiet=False)
+    # Download once
+    if not os.path.exists(LOCAL_PATH) or os.path.getsize(LOCAL_PATH) < 1024:
+        with st.spinner("Downloading dataset..."):
+            download_from_drive(DRIVE_FILE_ID, LOCAL_PATH)
 
     df = pd.read_csv(LOCAL_PATH)
 
-    # Debug + safety: normalize column names
+    # Normalize columns
     df.columns = [c.strip().lower() for c in df.columns]
 
-    # Handle common alternatives
+    # Ensure expected column exists
     if "comment" not in df.columns:
-        if "text" in df.columns:
-            df = df.rename(columns={"text": "comment"})
-        elif "headline" in df.columns:
-            df = df.rename(columns={"headline": "comment"})
-        elif "body" in df.columns:
-            df = df.rename(columns={"body": "comment"})
-        else:
-            st.error(f"CSV columns found: {df.columns.tolist()}")
-            raise KeyError("Missing 'comment' column in dataset")
+        st.error(f"CSV columns found: {df.columns.tolist()}")
+        raise KeyError("Missing 'comment' column in dataset")
 
     df = df.dropna(subset=["comment"])
     df["comment_length"] = df["comment"].astype(str).str.len()
     return df
+
 
 
 # Train All Models

@@ -23,23 +23,41 @@ from wordcloud import WordCloud
 # =========================
 # Google Drive dataset setup
 # =========================
+import os
+import pandas as pd
+import streamlit as st
+
 DRIVE_FILE_ID = "1BQaeAZfiMXHKwAZ9yEyO1VH5wTPyskIk"
-DATA_URL = f"https://drive.google.com/uc?id={DRIVE_FILE_ID}"
 LOCAL_PATH = "sarcasm.csv"
 
-
-# Load Dataset (Google Drive + local cache)
 @st.cache_data
 def load_data():
-    # Download once (Streamlit Cloud caches filesystem per app instance)
+    # Download from Google Drive if file not present
     if not os.path.exists(LOCAL_PATH):
-        df = pd.read_csv(DATA_URL)
-        df.to_csv(LOCAL_PATH, index=False)
-    else:
-        df = pd.read_csv(LOCAL_PATH)
+        import gdown
+
+        url = f"https://drive.google.com/uc?id={DRIVE_FILE_ID}"
+        gdown.download(url, LOCAL_PATH, quiet=False)
+
+    df = pd.read_csv(LOCAL_PATH)
+
+    # Debug + safety: normalize column names
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    # Handle common alternatives
+    if "comment" not in df.columns:
+        if "text" in df.columns:
+            df = df.rename(columns={"text": "comment"})
+        elif "headline" in df.columns:
+            df = df.rename(columns={"headline": "comment"})
+        elif "body" in df.columns:
+            df = df.rename(columns={"body": "comment"})
+        else:
+            st.error(f"CSV columns found: {df.columns.tolist()}")
+            raise KeyError("Missing 'comment' column in dataset")
 
     df = df.dropna(subset=["comment"])
-    df["comment_length"] = df["comment"].str.len()
+    df["comment_length"] = df["comment"].astype(str).str.len()
     return df
 
 

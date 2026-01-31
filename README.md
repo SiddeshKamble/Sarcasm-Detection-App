@@ -2,9 +2,10 @@
 
 A comprehensive machine learning application that detects sarcasm in text using multiple ML and deep learning models. Built with Streamlit for an interactive web interface.
 
+## 🚀 Live Demo
+https://sarcasm-detection-app.streamlit.app/
 
-
-<img width="622" height="331" alt="Image" src="https://github.com/user-attachments/assets/22dfcbb9-0cf8-4169-b888-ce6ad901570b" />
+<img width="1298" height="643" alt="Screenshot 2026-01-30 at 10 35 32 PM" src="https://github.com/user-attachments/assets/70b17bfc-1781-4148-8816-4c4f777f6427" />
 
 
 
@@ -25,6 +26,11 @@ The app uses a Reddit sarcasm detection dataset (`sarcasm.csv`) containing:
 - **score**: Reddit score/upvotes
 - **author**: Comment author
 - **parent_comment**: Parent comment context
+
+    
+<img width="1499" height="865" alt="Screenshot 2026-01-30 at 10 35 50 PM" src="https://github.com/user-attachments/assets/bf16a6a6-931e-4348-b3e3-c1bb1bee1b36" />
+
+<img width="1294" height="637" alt="Screenshot 2026-01-30 at 10 36 40 PM" src="https://github.com/user-attachments/assets/5366a4a4-0169-4874-9d1f-54a3f91cfee3" />
 
 ## Models Implemented
 
@@ -118,26 +124,14 @@ The app will open in your browser at `http://localhost:8501`
 2. Explore the dataset and visualizations
 3. Train models by clicking "Train All Models"
 4. Test predictions in the Interactive Prediction section
+   
+<img width="936" height="686" alt="Screenshot 2026-01-30 at 10 43 57 PM" src="https://github.com/user-attachments/assets/edaceea8-26f6-431d-a98c-28d019f7dcb8" />
 
 ### Example Test Sentences
 - `"Thank you for your feedback. It WaS ReAlLy InSIgHtFul!"`
 - `"Wow, I really didn't expect you to pass that exam. Good for you!!!"`
 - `"Methodology: Crafting the Ultimate Seriousness Detector"`
 
-## 📋 Requirements
-
-```
-streamlit>=1.28.0
-pandas>=1.5.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-torch>=2.0.0
-transformers>=4.30.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-wordcloud>=1.9.0
-joblib>=1.3.0
-```
 
 ## 📁 Project Structure
 

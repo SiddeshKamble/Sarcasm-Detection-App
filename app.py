@@ -1,25 +1,43 @@
+import os
 import numpy as np
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
+
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import joblib
-import seaborn as sns
 from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+
+import joblib
+import seaborn as sns  # (kept because you import it)
 from collections import Counter
 from wordcloud import WordCloud
 
 
-# Load Dataset
+# =========================
+# Google Drive dataset setup
+# =========================
+DRIVE_FILE_ID = "1BQaeAZfiMXHKwAZ9yEyO1VH5wTPyskIk"
+DATA_URL = f"https://drive.google.com/uc?id={DRIVE_FILE_ID}"
+LOCAL_PATH = "sarcasm.csv"
+
+
+# Load Dataset (Google Drive + local cache)
 @st.cache_data
 def load_data():
-    df = pd.read_csv("sarcasm.csv")
+    # Download once (Streamlit Cloud caches filesystem per app instance)
+    if not os.path.exists(LOCAL_PATH):
+        df = pd.read_csv(DATA_URL)
+        df.to_csv(LOCAL_PATH, index=False)
+    else:
+        df = pd.read_csv(LOCAL_PATH)
+
     df = df.dropna(subset=["comment"])
     df["comment_length"] = df["comment"].str.len()
     return df
@@ -96,7 +114,7 @@ def train_all_models(df):
         )
         joblib.dump((model_transformer, tokenizer), "pretrained_transformer_model.pkl")
 
-        # DistilBERT Model (Fine-Tuned)
+        # DistilBERT Model
         distilbert_tokenizer = DistilBertTokenizer.from_pretrained(
             "distilbert-base-uncased"
         )
@@ -104,11 +122,9 @@ def train_all_models(df):
             "distilbert-base-uncased"
         )
 
-        # Fine-tune with a smaller dataset
         y_test_distilbert = df_subset["label"].tolist()
         y_pred_distilbert = []
 
-        # Batch the predictions to speed up processing
         for i in range(0, len(df_subset), batch_size):
             batch_comments = df_subset["comment"].iloc[i : i + batch_size].tolist()
             tokenized_texts = distilbert_tokenizer(
@@ -210,7 +226,7 @@ def main():
             
             > "Sarcasm is the lowest form of wit but the highest form of intelligence." – Oscar Wilde 🦅
 
-            **Have fun exploring sarcasm detection! **
+            **Have fun exploring sarcasm detection!**
             """
         )
 
@@ -226,7 +242,7 @@ def main():
     elif navigation == "📈 EDA":
         columns = ["label", "comment", "subreddit", "score", "parent_comment"]
         data = load_data()
-        data_clean = data[columns]
+        data_clean = data[columns].copy()
 
         # Sarcasm Proportion by Length Bins
         data_clean["comment_length"] = data_clean["comment"].str.len()
@@ -236,14 +252,14 @@ def main():
             labels=["0-50", "51-100", "101-200", "201-300", "301-500", "500+"],
         )
 
-        sarcasm_by_length = data_clean.groupby("length_bin")["label"].mean()
+        sarcasm_by_length = data_clean.groupby("length_bin", observed=False)["label"].mean()
 
-        fig, ax = plt.subplots(figsize=(8, 4))  # Reduce the figure size
+        fig, ax = plt.subplots(figsize=(8, 4))
         sarcasm_by_length.plot(kind="bar", color="green", alpha=0.7, ax=ax)
         ax.set_title("Sarcasm Proportion by Length Bins")
         ax.set_xlabel("Length Bin")
         ax.set_ylabel("Sarcasm Proportion")
-        plt.tight_layout()  # Adjust layout to remove unnecessary space
+        plt.tight_layout()
         st.pyplot(fig)
 
         # Tokenize and count words
@@ -257,13 +273,9 @@ def main():
         sarcastic_counter = Counter(sarcastic_words).most_common(20)
         non_sarcastic_counter = Counter(non_sarcastic_words).most_common(20)
 
-        # Convert to DataFrame for plotting
         sarcastic_df = pd.DataFrame(sarcastic_counter, columns=["Word", "Count"])
-        non_sarcastic_df = pd.DataFrame(
-            non_sarcastic_counter, columns=["Word", "Count"]
-        )
+        non_sarcastic_df = pd.DataFrame(non_sarcastic_counter, columns=["Word", "Count"])
 
-        # Combine both graphs into one
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.bar(
             sarcastic_df["Word"],
@@ -288,7 +300,7 @@ def main():
         # Top Subreddits with Most Sarcastic Comments
         top_subreddits = data[data["label"] == 1]["subreddit"].value_counts().head(10)
 
-        fig, ax = plt.subplots(figsize=(8, 4))  # Reduce figure size
+        fig, ax = plt.subplots(figsize=(8, 4))
         top_subreddits.plot(kind="bar", color="red", alpha=0.8, ax=ax)
         ax.set_title("Top 10 Subreddits with Most Sarcastic Comments")
         ax.set_xlabel("Subreddit")
@@ -298,7 +310,7 @@ def main():
         st.pyplot(fig)
 
         # Distribution of Reddit Scores
-        fig, ax = plt.subplots(figsize=(8, 4))  # Reduce figure size
+        fig, ax = plt.subplots(figsize=(8, 4))
         ax.hist(
             data_clean[data_clean["label"] == 1]["score"].clip(-10, 50),
             bins=50,
@@ -328,7 +340,7 @@ def main():
             width=800, height=400, background_color="white"
         ).generate(sarcastic_text)
 
-        fig, ax = plt.subplots(figsize=(8, 4))  # Reduce figure size
+        fig, ax = plt.subplots(figsize=(8, 4))
         ax.imshow(wordcloud_sarcasm, interpolation="bilinear")
         ax.axis("off")
         ax.set_title("Word Cloud of Sarcastic Comments")
@@ -343,7 +355,7 @@ def main():
             width=800, height=400, background_color="white"
         ).generate(non_sarcastic_text)
 
-        fig, ax = plt.subplots(figsize=(8, 4))  # Reduce figure size
+        fig, ax = plt.subplots(figsize=(8, 4))
         ax.imshow(wordcloud_non_sarcasm, interpolation="bilinear")
         ax.axis("off")
         ax.set_title("Word Cloud of Non-Sarcastic Comments")
@@ -354,16 +366,13 @@ def main():
     elif navigation == "🛠️ Model Training":
         st.header("Model Training 🏃️‍♂️")
 
-        # Check if models are already trained
         if (
             "nb_model" in st.session_state
             and "lr_model" in st.session_state
             and "pretrained_model" in st.session_state
             and "distilbert_model" in st.session_state
         ):
-            st.write(
-                "Models are already trained. You can proceed to Interactive Prediction. 🤖"
-            )
+            st.write("Models are already trained. You can proceed to Interactive Prediction. 🤖")
             if st.button("Clear Session State and Retrain Models 🔄"):
                 for key in [
                     "nb_model",
@@ -374,7 +383,7 @@ def main():
                 ]:
                     if key in st.session_state:
                         del st.session_state[key]
-                st.experimental_rerun()
+                st.rerun()
         else:
             if st.button("Train All Models 🚀"):
                 (
@@ -396,14 +405,11 @@ def main():
         st.header("Interactive Prediction 🎯")
         st.write("Example Sentences for Testing:")
         st.markdown(" - Thank you for your feedback. It WaS ReAlLy InSIgGhTFul!")
-        st.markdown(
-            " - Wow, I really didn’t expect you to pass that exam. Good for you!!!"
-        )
+        st.markdown(" - Wow, I really didn’t expect you to pass that exam. Good for you!!!")
         st.markdown(" - Methodology: Crafting the Ultimate Seriousness Detector")
 
         user_input = st.text_input("Enter a sentence to detect sarcasm 📝:")
 
-        # Ensure models are trained
         if (
             "nb_model" not in st.session_state
             or "lr_model" not in st.session_state
@@ -412,39 +418,28 @@ def main():
         ):
             st.write("Please train all models first! 🚧")
         elif user_input:
-            # Naive Bayes Prediction
             nb_model, nb_vectorizer = st.session_state["nb_model"]
             nb_prediction = nb_model.predict(nb_vectorizer.transform([user_input]))[0]
 
-            # Logistic Regression Prediction
             lr_model, lr_vectorizer = st.session_state["lr_model"]
             lr_prediction = lr_model.predict(lr_vectorizer.transform([user_input]))[0]
 
-            # Pretrained Model Prediction
             pretrained_model, tokenizer = st.session_state["pretrained_model"]
             pretrained_sarcasm = predict_sarcasm_transformer(
                 user_input, tokenizer, pretrained_model
             )
             pretrained_prediction = (
-                "Sarcasm detected"
-                if pretrained_sarcasm > 0.5
-                else "No sarcasm detected"
+                "Sarcasm detected" if pretrained_sarcasm > 0.5 else "No sarcasm detected"
             )
 
-            # DistilBERT Model Prediction
-            distilbert_model, distilbert_tokenizer = st.session_state[
-                "distilbert_model"
-            ]
+            distilbert_model, distilbert_tokenizer = st.session_state["distilbert_model"]
             distilbert_sarcasm = predict_sarcasm_distilbert(
                 user_input, distilbert_tokenizer, distilbert_model
             )
             distilbert_prediction = (
-                "Sarcasm detected"
-                if distilbert_sarcasm > 0.5
-                else "No sarcasm detected"
+                "Sarcasm detected" if distilbert_sarcasm > 0.5 else "No sarcasm detected"
             )
 
-            # Display Results
             st.write(
                 "Naive Bayes Prediction:",
                 "😏 Sarcasm" if nb_prediction else "🙂 Not Sarcasm",

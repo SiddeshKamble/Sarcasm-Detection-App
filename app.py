@@ -10,10 +10,6 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
-
 import joblib
 import seaborn as sns  # kept because you import it
 from collections import Counter
@@ -24,6 +20,13 @@ import re
 
 # Detect Streamlit Cloud (used to keep hosted demo stable)
 ON_STREAMLIT = os.getenv("STREAMLIT_SERVER_RUNNING") == "true"
+
+# Only import torch/transformers locally (prevents Streamlit Cloud crash)
+if not ON_STREAMLIT:
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+    from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+
 
 DRIVE_FILE_ID = "1BQaeAZfiMXHKwAZ9yEyO1VH5wTPyskIk"
 LOCAL_PATH = "sarcasm.csv"
@@ -82,15 +85,19 @@ def load_data():
     return df
 
 
-# Train All Models
 @st.cache_resource
-def train_all_models(df):
+def train_all_models(df: pd.DataFrame):
+    """
+    Trains NB + LR always.
+    Trains transformer models only when NOT on Streamlit Cloud (to keep hosted demo stable).
+    """
     metrics = {}
     try:
         # Naive Bayes
         vectorizer_nb = CountVectorizer()
-        X_nb = vectorizer_nb.fit_transform(df["comment"])
+        X_nb = vectorizer_nb.fit_transform(df["comment"].astype(str))
         y_nb = df["label"]
+
         X_train_nb, X_test_nb, y_train_nb, y_test_nb = train_test_split(
             X_nb, y_nb, test_size=0.25, random_state=42
         )
@@ -105,8 +112,9 @@ def train_all_models(df):
 
         # Logistic Regression
         vectorizer_lr = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
-        X_lr = vectorizer_lr.fit_transform(df["comment"])
+        X_lr = vectorizer_lr.fit_transform(df["comment"].astype(str))
         y_lr = df["label"]
+
         X_train_lr, X_test_lr, y_train_lr, y_test_lr = train_test_split(
             X_lr, y_lr, test_size=0.25, random_state=42
         )
@@ -119,8 +127,7 @@ def train_all_models(df):
         )
         joblib.dump((model_lr, vectorizer_lr), "logistic_regression_model.pkl")
 
-        # Transformers are heavy and can crash Streamlit Cloud (memory/timeout).
-        # Keep the hosted demo stable by disabling transformer training there.
+        # Transformers: disable on Streamlit Cloud
         if ON_STREAMLIT:
             metrics["Pretrained Transformer"] = {
                 "note": "Disabled on Streamlit Cloud to keep the app stable."
@@ -140,13 +147,13 @@ def train_all_models(df):
             )
 
             # Use a smaller subset of data for evaluation
-            df_subset = df.sample(n=500, random_state=42)
+            df_subset = df.sample(n=min(500, len(df)), random_state=42)
             y_test_transformer = df_subset["label"].tolist()
             y_pred_transformer = []
 
             batch_size = 16
             for i in range(0, len(df_subset), batch_size):
-                batch_comments = df_subset["comment"].iloc[i : i + batch_size].tolist()
+                batch_comments = df_subset["comment"].iloc[i : i + batch_size].astype(str).tolist()
                 tokenized_texts = tokenizer(
                     batch_comments,
                     padding=True,
@@ -176,7 +183,7 @@ def train_all_models(df):
             y_pred_distilbert = []
 
             for i in range(0, len(df_subset), batch_size):
-                batch_comments = df_subset["comment"].iloc[i : i + batch_size].tolist()
+                batch_comments = df_subset["comment"].iloc[i : i + batch_size].astype(str).tolist()
                 tokenized_texts = distilbert_tokenizer(
                     batch_comments,
                     padding=True,
@@ -201,13 +208,13 @@ def train_all_models(df):
             (distilbert_model, distilbert_tokenizer),
             metrics,
         )
+
     except Exception as e:
         st.error(f"An error occurred while training models: {e}")
         return None, None, None, None, None
 
 
-# Predict Sarcasm for Pretrained Model
-def predict_sarcasm_transformer(text, tokenizer, model):
+def predict_sarcasm_transformer(text: str, tokenizer, model):
     tokenized_text = tokenizer(
         [text], padding=True, truncation=True, max_length=256, return_tensors="pt"
     )
@@ -217,8 +224,7 @@ def predict_sarcasm_transformer(text, tokenizer, model):
     return probs[1]  # Probability of sarcasm
 
 
-# Predict Sarcasm for DistilBERT Model
-def predict_sarcasm_distilbert(text, tokenizer, model):
+def predict_sarcasm_distilbert(text: str, tokenizer, model):
     tokenized_text = tokenizer(
         [text], padding=True, truncation=True, max_length=256, return_tensors="pt"
     )
@@ -228,7 +234,6 @@ def predict_sarcasm_distilbert(text, tokenizer, model):
     return probs[1]  # Probability of sarcasm
 
 
-# Display Metrics as DataFrame
 def display_metrics(metrics_dict):
     for model_name, metrics in metrics_dict.items():
         st.write(f"### {model_name} Metrics:")
@@ -239,12 +244,10 @@ def display_metrics(metrics_dict):
             st.write(metrics)
 
 
-# Main App
 def main():
     st.set_page_config(layout="wide")
     st.title("Sarcasm Detection App 👾💬")
 
-    # Navigation Bar
     st.sidebar.title("Navigation")
     navigation = st.sidebar.radio(
         "Choose a section:",
@@ -257,10 +260,8 @@ def main():
         ],
     )
 
-    # Load dataset
     df = load_data()
 
-    # Home
     if navigation == "🏠 Home":
         st.header("Welcome to the Sarcasm Detection App!")
         st.markdown(
@@ -286,7 +287,6 @@ def main():
                 "Naive Bayes and Logistic Regression work normally."
             )
 
-    # Dataset Overview
     elif navigation == "📊 Dataset Overview":
         st.header("Dataset Overview 🛂️")
         st.write("Dataset Preview:")
@@ -294,14 +294,14 @@ def main():
         st.write("Class Distribution:")
         st.bar_chart(df["label"].value_counts())
 
-    # EDA
     elif navigation == "📈 EDA":
+        st.header("Exploratory Data Analysis (EDA) 📈")
+
         columns = ["label", "comment", "subreddit", "score", "parent_comment"]
-        data = load_data()
-        data_clean = data[columns].copy()
+        data_clean = df[columns].copy()
 
         # Sarcasm Proportion by Length Bins
-        data_clean["comment_length"] = data_clean["comment"].str.len()
+        data_clean["comment_length"] = data_clean["comment"].astype(str).str.len()
         data_clean["length_bin"] = pd.cut(
             data_clean["comment_length"],
             bins=[0, 50, 100, 200, 300, 500, np.inf],
@@ -320,10 +320,10 @@ def main():
 
         # Tokenize and count words
         sarcastic_words = " ".join(
-            data_clean[data_clean["label"] == 1]["comment"].dropna()
+            data_clean[data_clean["label"] == 1]["comment"].dropna().astype(str)
         ).split()
         non_sarcastic_words = " ".join(
-            data_clean[data_clean["label"] == 0]["comment"].dropna()
+            data_clean[data_clean["label"] == 0]["comment"].dropna().astype(str)
         ).split()
 
         sarcastic_counter = Counter(sarcastic_words).most_common(20)
@@ -356,47 +356,49 @@ def main():
         st.pyplot(fig)
 
         # Top Subreddits with Most Sarcastic Comments
-        top_subreddits = data[data["label"] == 1]["subreddit"].value_counts().head(10)
+        if "subreddit" in data_clean.columns:
+            top_subreddits = df[df["label"] == 1]["subreddit"].value_counts().head(10)
 
-        fig, ax = plt.subplots(figsize=(8, 4))
-        top_subreddits.plot(kind="bar", color="red", alpha=0.8, ax=ax)
-        ax.set_title("Top 10 Subreddits with Most Sarcastic Comments")
-        ax.set_xlabel("Subreddit")
-        ax.set_ylabel("Count of Sarcastic Comments")
-        ax.set_xticklabels(top_subreddits.index, rotation=45)
-        plt.tight_layout()
-        st.pyplot(fig)
+            fig, ax = plt.subplots(figsize=(8, 4))
+            top_subreddits.plot(kind="bar", color="red", alpha=0.8, ax=ax)
+            ax.set_title("Top 10 Subreddits with Most Sarcastic Comments")
+            ax.set_xlabel("Subreddit")
+            ax.set_ylabel("Count of Sarcastic Comments")
+            ax.set_xticklabels(top_subreddits.index, rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
 
         # Distribution of Reddit Scores
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.hist(
-            data_clean[data_clean["label"] == 1]["score"].clip(-10, 50),
-            bins=50,
-            alpha=0.7,
-            label="Sarcasm",
-            color="blue",
-        )
-        ax.hist(
-            data_clean[data_clean["label"] == 0]["score"].clip(-10, 50),
-            bins=50,
-            alpha=0.7,
-            label="Not Sarcasm",
-            color="orange",
-        )
-        ax.set_title("Distribution of Reddit Scores")
-        ax.set_xlabel("Score (clipped at -10 and 50)")
-        ax.set_ylabel("Frequency")
-        ax.legend()
-        plt.tight_layout()
-        st.pyplot(fig)
+        if "score" in data_clean.columns:
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.hist(
+                data_clean[data_clean["label"] == 1]["score"].clip(-10, 50),
+                bins=50,
+                alpha=0.7,
+                label="Sarcasm",
+                color="blue",
+            )
+            ax.hist(
+                data_clean[data_clean["label"] == 0]["score"].clip(-10, 50),
+                bins=50,
+                alpha=0.7,
+                label="Not Sarcasm",
+                color="orange",
+            )
+            ax.set_title("Distribution of Reddit Scores")
+            ax.set_xlabel("Score (clipped at -10 and 50)")
+            ax.set_ylabel("Frequency")
+            ax.legend()
+            plt.tight_layout()
+            st.pyplot(fig)
 
         # Word Cloud of Sarcastic Comments
         sarcastic_text = " ".join(
-            data_clean[data_clean["label"] == 1]["comment"].dropna()
+            data_clean[data_clean["label"] == 1]["comment"].dropna().astype(str)
         )
-        wordcloud_sarcasm = WordCloud(
-            width=800, height=400, background_color="white"
-        ).generate(sarcastic_text)
+        wordcloud_sarcasm = WordCloud(width=800, height=400, background_color="white").generate(
+            sarcastic_text
+        )
 
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.imshow(wordcloud_sarcasm, interpolation="bilinear")
@@ -407,7 +409,7 @@ def main():
 
         # Word Cloud of Non-Sarcastic Comments
         non_sarcastic_text = " ".join(
-            data_clean[data_clean["label"] == 0]["comment"].dropna()
+            data_clean[data_clean["label"] == 0]["comment"].dropna().astype(str)
         )
         wordcloud_non_sarcasm = WordCloud(
             width=800, height=400, background_color="white"
@@ -420,7 +422,6 @@ def main():
         plt.tight_layout()
         st.pyplot(fig)
 
-    # Model Training
     elif navigation == "🛠️ Model Training":
         st.header("Model Training 🏃️‍♂️")
 
@@ -451,6 +452,7 @@ def main():
                     distilbert_model_data,
                     metrics,
                 ) = train_all_models(df)
+
                 if metrics:
                     st.session_state["nb_model"] = nb_model_data
                     st.session_state["lr_model"] = lr_model_data
@@ -459,7 +461,6 @@ def main():
                     st.session_state["metrics"] = metrics
                     st.success("Training complete. Go to Interactive Prediction. ✅")
 
-    # Interactive Prediction
     elif navigation == "🤖 Interactive Prediction":
         st.header("Interactive Prediction 🎯")
         st.write("Example Sentences for Testing:")
@@ -486,8 +487,13 @@ def main():
             pretrained_model, tokenizer = st.session_state["pretrained_model"]
             distilbert_model, distilbert_tokenizer = st.session_state["distilbert_model"]
 
-            # If running on Streamlit Cloud, these may be disabled (None)
-            if pretrained_model is None or tokenizer is None or distilbert_model is None or distilbert_tokenizer is None:
+            # If running on Streamlit Cloud, these will be None
+            if (
+                pretrained_model is None
+                or tokenizer is None
+                or distilbert_model is None
+                or distilbert_tokenizer is None
+            ):
                 st.info(
                     "Transformer models are disabled on the hosted demo to keep it fast and stable. "
                     "Naive Bayes and Logistic Regression predictions are shown below."
@@ -526,7 +532,7 @@ def main():
                 st.write(f"Pretrained Model Prediction: {pretrained_prediction}")
                 st.write(f"DistilBERT Model Prediction: {distilbert_prediction}")
 
-    # Show metrics (optional quick view)
+    # Sidebar: metrics display
     if "metrics" in st.session_state and st.session_state["metrics"]:
         st.sidebar.markdown("---")
         st.sidebar.subheader("Model Metrics (latest)")

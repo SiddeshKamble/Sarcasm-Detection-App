@@ -18,18 +18,33 @@ from wordcloud import WordCloud
 import requests
 import re
 
-# Detect Streamlit Cloud (used to keep hosted demo stable)
-ON_STREAMLIT = (
-    os.getenv("STREAMLIT_CLOUD") is not None
-    or os.getenv("STREAMLIT_SERVER_PORT") is not None
-    or os.getenv("STREAMLIT_SERVER_HEADLESS") == "true"
-)
+# Detect Streamlit runtime reliably (local + Cloud)
+ON_STREAMLIT = os.getenv("STREAMLIT_SERVER_RUNNING") == "true"
 
-# Only import torch/transformers locally (prevents Streamlit Cloud crash)
-if not ON_STREAMLIT:
-    import torch
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification
-    from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+# -----------------------------
+# Torch/Transformers: SAFE IMPORT
+# (Never crash if torch isn't available on Streamlit Cloud)
+# -----------------------------
+HAS_TORCH = False
+HAS_TRANSFORMERS = False
+
+try:
+    import torch  # noqa: F401
+    HAS_TORCH = True
+except Exception:
+    HAS_TORCH = False
+
+if HAS_TORCH:
+    try:
+        from transformers import (
+            AutoTokenizer,
+            AutoModelForSequenceClassification,
+            DistilBertTokenizer,
+            DistilBertForSequenceClassification,
+        )
+        HAS_TRANSFORMERS = True
+    except Exception:
+        HAS_TRANSFORMERS = False
 
 
 DRIVE_FILE_ID = "1BQaeAZfiMXHKwAZ9yEyO1VH5wTPyskIk"
@@ -93,7 +108,7 @@ def load_data():
 def train_all_models(df: pd.DataFrame):
     """
     Trains NB + LR always.
-    Trains transformer models only when NOT on Streamlit Cloud (to keep hosted demo stable).
+    Trains transformer models only when torch+transformers are available.
     """
     metrics = {}
     try:
@@ -131,13 +146,13 @@ def train_all_models(df: pd.DataFrame):
         )
         joblib.dump((model_lr, vectorizer_lr), "logistic_regression_model.pkl")
 
-        # Transformers: disable on Streamlit Cloud
-        if ON_STREAMLIT:
+        # Transformers: only if torch+transformers available
+        if not (HAS_TORCH and HAS_TRANSFORMERS):
             metrics["Pretrained Transformer"] = {
-                "note": "Disabled on Streamlit Cloud to keep the app stable."
+                "note": "Torch/Transformers not available in this environment (disabled to keep the app stable)."
             }
             metrics["DistilBERT Model"] = {
-                "note": "Disabled on Streamlit Cloud to keep the app stable."
+                "note": "Torch/Transformers not available in this environment (disabled to keep the app stable)."
             }
             model_transformer, tokenizer = None, None
             distilbert_model, distilbert_tokenizer = None, None
@@ -157,7 +172,9 @@ def train_all_models(df: pd.DataFrame):
 
             batch_size = 16
             for i in range(0, len(df_subset), batch_size):
-                batch_comments = df_subset["comment"].iloc[i : i + batch_size].astype(str).tolist()
+                batch_comments = (
+                    df_subset["comment"].iloc[i : i + batch_size].astype(str).tolist()
+                )
                 tokenized_texts = tokenizer(
                     batch_comments,
                     padding=True,
@@ -173,7 +190,9 @@ def train_all_models(df: pd.DataFrame):
             metrics["Pretrained Transformer"] = classification_report(
                 y_test_transformer, y_pred_transformer, output_dict=True
             )
-            joblib.dump((model_transformer, tokenizer), "pretrained_transformer_model.pkl")
+            joblib.dump(
+                (model_transformer, tokenizer), "pretrained_transformer_model.pkl"
+            )
 
             # DistilBERT Model
             distilbert_tokenizer = DistilBertTokenizer.from_pretrained(
@@ -187,7 +206,9 @@ def train_all_models(df: pd.DataFrame):
             y_pred_distilbert = []
 
             for i in range(0, len(df_subset), batch_size):
-                batch_comments = df_subset["comment"].iloc[i : i + batch_size].astype(str).tolist()
+                batch_comments = (
+                    df_subset["comment"].iloc[i : i + batch_size].astype(str).tolist()
+                )
                 tokenized_texts = distilbert_tokenizer(
                     batch_comments,
                     padding=True,
@@ -219,6 +240,8 @@ def train_all_models(df: pd.DataFrame):
 
 
 def predict_sarcasm_transformer(text: str, tokenizer, model):
+    if not (HAS_TORCH and HAS_TRANSFORMERS):
+        return None
     tokenized_text = tokenizer(
         [text], padding=True, truncation=True, max_length=256, return_tensors="pt"
     )
@@ -229,6 +252,8 @@ def predict_sarcasm_transformer(text: str, tokenizer, model):
 
 
 def predict_sarcasm_distilbert(text: str, tokenizer, model):
+    if not (HAS_TORCH and HAS_TRANSFORMERS):
+        return None
     tokenized_text = tokenizer(
         [text], padding=True, truncation=True, max_length=256, return_tensors="pt"
     )
@@ -285,9 +310,9 @@ def main():
             """
         )
 
-        if ON_STREAMLIT:
+        if not (HAS_TORCH and HAS_TRANSFORMERS):
             st.info(
-                "Note: Transformer training is disabled on the hosted demo to keep it fast and stable. "
+                "Note: Torch/Transformers are not available in this environment, so transformer models are disabled. "
                 "Naive Bayes and Logistic Regression work normally."
             )
 
@@ -491,7 +516,7 @@ def main():
             pretrained_model, tokenizer = st.session_state["pretrained_model"]
             distilbert_model, distilbert_tokenizer = st.session_state["distilbert_model"]
 
-            # If running on Streamlit Cloud, these will be None
+            # If torch/transformers aren't available, these will be None
             if (
                 pretrained_model is None
                 or tokenizer is None
@@ -499,7 +524,7 @@ def main():
                 or distilbert_tokenizer is None
             ):
                 st.info(
-                    "Transformer models are disabled on the hosted demo to keep it fast and stable. "
+                    "Transformer models are disabled in this environment. "
                     "Naive Bayes and Logistic Regression predictions are shown below."
                 )
                 st.write(
@@ -514,15 +539,19 @@ def main():
                 pretrained_sarcasm = predict_sarcasm_transformer(
                     user_input, tokenizer, pretrained_model
                 )
-                pretrained_prediction = (
-                    "Sarcasm detected" if pretrained_sarcasm > 0.5 else "No sarcasm detected"
-                )
-
                 distilbert_sarcasm = predict_sarcasm_distilbert(
                     user_input, distilbert_tokenizer, distilbert_model
                 )
+
+                pretrained_prediction = (
+                    "Sarcasm detected"
+                    if (pretrained_sarcasm is not None and pretrained_sarcasm > 0.5)
+                    else "No sarcasm detected"
+                )
                 distilbert_prediction = (
-                    "Sarcasm detected" if distilbert_sarcasm > 0.5 else "No sarcasm detected"
+                    "Sarcasm detected"
+                    if (distilbert_sarcasm is not None and distilbert_sarcasm > 0.5)
+                    else "No sarcasm detected"
                 )
 
                 st.write(

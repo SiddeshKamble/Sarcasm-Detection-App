@@ -330,7 +330,9 @@ def main():
             color="orange",
         )
         ax.set_title("Top Words in Sarcastic vs. Non-Sarcastic Comments")
-        ax.set_xticklabels(sarcastic_df["Word"], rotation=45)
+        words = sarcastic_df["Word"].tolist()
+        ax.set_xticks(range(len(words)))
+        ax.set_xticklabels(words, rotation=45, ha="right")
         ax.legend()
         plt.tight_layout()
         st.pyplot(fig)

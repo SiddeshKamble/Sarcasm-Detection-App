@@ -3,8 +3,10 @@ numpy
 pandas
 matplotlib
 scikit-learn
-torch
-transformers
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
+transformers==4.44.2
+tokenizers==0.19.1
 joblib
 seaborn
 wordcloud

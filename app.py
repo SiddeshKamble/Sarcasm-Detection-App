@@ -15,13 +15,15 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
 
 import joblib
-import seaborn as sns  # (kept because you import it)
+import seaborn as sns  # kept because you import it
 from collections import Counter
 from wordcloud import WordCloud
 
-
 import requests
 import re
+
+# Detect Streamlit Cloud (used to keep hosted demo stable)
+ON_STREAMLIT = os.getenv("STREAMLIT_SERVER_RUNNING") == "true"
 
 DRIVE_FILE_ID = "1BQaeAZfiMXHKwAZ9yEyO1VH5wTPyskIk"
 LOCAL_PATH = "sarcasm.csv"
@@ -80,7 +82,6 @@ def load_data():
     return df
 
 
-
 # Train All Models
 @st.cache_resource
 def train_all_models(df):
@@ -118,69 +119,80 @@ def train_all_models(df):
         )
         joblib.dump((model_lr, vectorizer_lr), "logistic_regression_model.pkl")
 
-        # Pretrained Transformer Model
-        tokenizer = AutoTokenizer.from_pretrained(
-            "jkhan447/sarcasm-detection-RoBerta-base-CR"
-        )
-        model_transformer = AutoModelForSequenceClassification.from_pretrained(
-            "jkhan447/sarcasm-detection-RoBerta-base-CR"
-        )
-
-        # Use a smaller subset of data for evaluation
-        df_subset = df.sample(n=500, random_state=42)
-        y_test_transformer = df_subset["label"].tolist()
-        y_pred_transformer = []
-
-        # Batch the predictions to speed up processing
-        batch_size = 16
-        for i in range(0, len(df_subset), batch_size):
-            batch_comments = df_subset["comment"].iloc[i : i + batch_size].tolist()
-            tokenized_texts = tokenizer(
-                batch_comments,
-                padding=True,
-                truncation=True,
-                max_length=256,
-                return_tensors="pt",
+        # Transformers are heavy and can crash Streamlit Cloud (memory/timeout).
+        # Keep the hosted demo stable by disabling transformer training there.
+        if ON_STREAMLIT:
+            metrics["Pretrained Transformer"] = {
+                "note": "Disabled on Streamlit Cloud to keep the app stable."
+            }
+            metrics["DistilBERT Model"] = {
+                "note": "Disabled on Streamlit Cloud to keep the app stable."
+            }
+            model_transformer, tokenizer = None, None
+            distilbert_model, distilbert_tokenizer = None, None
+        else:
+            # Pretrained Transformer Model (RoBERTa)
+            tokenizer = AutoTokenizer.from_pretrained(
+                "jkhan447/sarcasm-detection-RoBerta-base-CR"
             )
-            with torch.no_grad():
-                output = model_transformer(**tokenized_texts)
-            probs = torch.softmax(output.logits, dim=-1).tolist()
-            y_pred_transformer.extend([1 if prob[1] > 0.5 else 0 for prob in probs])
-
-        metrics["Pretrained Transformer"] = classification_report(
-            y_test_transformer, y_pred_transformer, output_dict=True
-        )
-        joblib.dump((model_transformer, tokenizer), "pretrained_transformer_model.pkl")
-
-        # DistilBERT Model
-        distilbert_tokenizer = DistilBertTokenizer.from_pretrained(
-            "distilbert-base-uncased"
-        )
-        distilbert_model = DistilBertForSequenceClassification.from_pretrained(
-            "distilbert-base-uncased"
-        )
-
-        y_test_distilbert = df_subset["label"].tolist()
-        y_pred_distilbert = []
-
-        for i in range(0, len(df_subset), batch_size):
-            batch_comments = df_subset["comment"].iloc[i : i + batch_size].tolist()
-            tokenized_texts = distilbert_tokenizer(
-                batch_comments,
-                padding=True,
-                truncation=True,
-                max_length=256,
-                return_tensors="pt",
+            model_transformer = AutoModelForSequenceClassification.from_pretrained(
+                "jkhan447/sarcasm-detection-RoBerta-base-CR"
             )
-            with torch.no_grad():
-                output = distilbert_model(**tokenized_texts)
-            probs = torch.softmax(output.logits, dim=-1).tolist()
-            y_pred_distilbert.extend([1 if prob[1] > 0.5 else 0 for prob in probs])
 
-        metrics["DistilBERT Model"] = classification_report(
-            y_test_distilbert, y_pred_distilbert, output_dict=True
-        )
-        joblib.dump((distilbert_model, distilbert_tokenizer), "distilbert_model.pkl")
+            # Use a smaller subset of data for evaluation
+            df_subset = df.sample(n=500, random_state=42)
+            y_test_transformer = df_subset["label"].tolist()
+            y_pred_transformer = []
+
+            batch_size = 16
+            for i in range(0, len(df_subset), batch_size):
+                batch_comments = df_subset["comment"].iloc[i : i + batch_size].tolist()
+                tokenized_texts = tokenizer(
+                    batch_comments,
+                    padding=True,
+                    truncation=True,
+                    max_length=256,
+                    return_tensors="pt",
+                )
+                with torch.no_grad():
+                    output = model_transformer(**tokenized_texts)
+                probs = torch.softmax(output.logits, dim=-1).tolist()
+                y_pred_transformer.extend([1 if prob[1] > 0.5 else 0 for prob in probs])
+
+            metrics["Pretrained Transformer"] = classification_report(
+                y_test_transformer, y_pred_transformer, output_dict=True
+            )
+            joblib.dump((model_transformer, tokenizer), "pretrained_transformer_model.pkl")
+
+            # DistilBERT Model
+            distilbert_tokenizer = DistilBertTokenizer.from_pretrained(
+                "distilbert-base-uncased"
+            )
+            distilbert_model = DistilBertForSequenceClassification.from_pretrained(
+                "distilbert-base-uncased"
+            )
+
+            y_test_distilbert = df_subset["label"].tolist()
+            y_pred_distilbert = []
+
+            for i in range(0, len(df_subset), batch_size):
+                batch_comments = df_subset["comment"].iloc[i : i + batch_size].tolist()
+                tokenized_texts = distilbert_tokenizer(
+                    batch_comments,
+                    padding=True,
+                    truncation=True,
+                    max_length=256,
+                    return_tensors="pt",
+                )
+                with torch.no_grad():
+                    output = distilbert_model(**tokenized_texts)
+                probs = torch.softmax(output.logits, dim=-1).tolist()
+                y_pred_distilbert.extend([1 if prob[1] > 0.5 else 0 for prob in probs])
+
+            metrics["DistilBERT Model"] = classification_report(
+                y_test_distilbert, y_pred_distilbert, output_dict=True
+            )
+            joblib.dump((distilbert_model, distilbert_tokenizer), "distilbert_model.pkl")
 
         return (
             (model_nb, vectorizer_nb),
@@ -267,6 +279,12 @@ def main():
             **Have fun exploring sarcasm detection!**
             """
         )
+
+        if ON_STREAMLIT:
+            st.info(
+                "Note: Transformer training is disabled on the hosted demo to keep it fast and stable. "
+                "Naive Bayes and Logistic Regression work normally."
+            )
 
     # Dataset Overview
     elif navigation == "📊 Dataset Overview":
@@ -439,6 +457,7 @@ def main():
                     st.session_state["pretrained_model"] = transformer_model_data
                     st.session_state["distilbert_model"] = distilbert_model_data
                     st.session_state["metrics"] = metrics
+                    st.success("Training complete. Go to Interactive Prediction. ✅")
 
     # Interactive Prediction
     elif navigation == "🤖 Interactive Prediction":
@@ -465,31 +484,53 @@ def main():
             lr_prediction = lr_model.predict(lr_vectorizer.transform([user_input]))[0]
 
             pretrained_model, tokenizer = st.session_state["pretrained_model"]
-            pretrained_sarcasm = predict_sarcasm_transformer(
-                user_input, tokenizer, pretrained_model
-            )
-            pretrained_prediction = (
-                "Sarcasm detected" if pretrained_sarcasm > 0.5 else "No sarcasm detected"
-            )
-
             distilbert_model, distilbert_tokenizer = st.session_state["distilbert_model"]
-            distilbert_sarcasm = predict_sarcasm_distilbert(
-                user_input, distilbert_tokenizer, distilbert_model
-            )
-            distilbert_prediction = (
-                "Sarcasm detected" if distilbert_sarcasm > 0.5 else "No sarcasm detected"
-            )
 
-            st.write(
-                "Naive Bayes Prediction:",
-                "😏 Sarcasm" if nb_prediction else "🙂 Not Sarcasm",
-            )
-            st.write(
-                "Logistic Regression Prediction:",
-                "😏 Sarcasm" if lr_prediction else "🙂 Not Sarcasm",
-            )
-            st.write(f"Pretrained Model Prediction: {pretrained_prediction}")
-            st.write(f"DistilBERT Model Prediction: {distilbert_prediction}")
+            # If running on Streamlit Cloud, these may be disabled (None)
+            if pretrained_model is None or tokenizer is None or distilbert_model is None or distilbert_tokenizer is None:
+                st.info(
+                    "Transformer models are disabled on the hosted demo to keep it fast and stable. "
+                    "Naive Bayes and Logistic Regression predictions are shown below."
+                )
+                st.write(
+                    "Naive Bayes Prediction:",
+                    "😏 Sarcasm" if nb_prediction else "🙂 Not Sarcasm",
+                )
+                st.write(
+                    "Logistic Regression Prediction:",
+                    "😏 Sarcasm" if lr_prediction else "🙂 Not Sarcasm",
+                )
+            else:
+                pretrained_sarcasm = predict_sarcasm_transformer(
+                    user_input, tokenizer, pretrained_model
+                )
+                pretrained_prediction = (
+                    "Sarcasm detected" if pretrained_sarcasm > 0.5 else "No sarcasm detected"
+                )
+
+                distilbert_sarcasm = predict_sarcasm_distilbert(
+                    user_input, distilbert_tokenizer, distilbert_model
+                )
+                distilbert_prediction = (
+                    "Sarcasm detected" if distilbert_sarcasm > 0.5 else "No sarcasm detected"
+                )
+
+                st.write(
+                    "Naive Bayes Prediction:",
+                    "😏 Sarcasm" if nb_prediction else "🙂 Not Sarcasm",
+                )
+                st.write(
+                    "Logistic Regression Prediction:",
+                    "😏 Sarcasm" if lr_prediction else "🙂 Not Sarcasm",
+                )
+                st.write(f"Pretrained Model Prediction: {pretrained_prediction}")
+                st.write(f"DistilBERT Model Prediction: {distilbert_prediction}")
+
+    # Show metrics (optional quick view)
+    if "metrics" in st.session_state and st.session_state["metrics"]:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Model Metrics (latest)")
+        display_metrics(st.session_state["metrics"])
 
 
 if __name__ == "__main__":

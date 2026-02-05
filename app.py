@@ -19,7 +19,11 @@ import requests
 import re
 
 # Detect Streamlit Cloud (used to keep hosted demo stable)
-ON_STREAMLIT = bool(os.getenv("STREAMLIT_CLOUD")) or bool(os.getenv("STREAMLIT_SERVER_PORT")) or bool(os.getenv("STREAMLIT_SERVER_RUNNING"))
+ON_STREAMLIT = (
+    os.getenv("STREAMLIT_CLOUD") is not None
+    or os.getenv("STREAMLIT_SERVER_PORT") is not None
+    or os.getenv("STREAMLIT_SERVER_HEADLESS") == "true"
+)
 
 # Only import torch/transformers locally (prevents Streamlit Cloud crash)
 if not ON_STREAMLIT:
